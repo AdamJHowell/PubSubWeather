@@ -9,6 +9,7 @@
 #include <PubSubClient.h>	  // PubSub is the MQTT API.
 #include <Wire.h>				  // Include Wire library, required for I2C devices
 
+#define BMP280_I2C_ADDRESS 0x76
 
 // Define constants.
 const char* wifiSsid = "Red";
@@ -17,11 +18,6 @@ char clientAddress[16];
 const char* mqttBroker = "192.168.55.200";
 const char* mqttTopic = "ajhWeather";
 const int mqttPort = 2112;
-const int ESP8266_LED = 16;
-const int ESP12_LED = 2;
-const int BMP280_I2C_ADDRESS = 0x76;
-const int LED_ON = 0; // The ESP8266 LED logic is backwards.
-const int LED_OFF = 1;
 
 
 // Create class objects.
@@ -30,9 +26,39 @@ WiFiClient espClient;
 PubSubClient mqttClient( espClient );
 
 
-// Connect to WiFi (if needed) and MQTT.
-String networkConnect()
+// Connect to the MQTT broker.
+void mqttConnect()
 {
+	// Loop until MQTT has connected.
+	while( !mqttClient.connected() )
+	{
+		Serial.print( "Attempting MQTT connection..." );
+		if( mqttClient.connect( "ESP8266 Client" ) ) // Attempt to mqttConnect using the designated clientID.
+		{
+			Serial.println( "connected" );
+		}
+		else
+		{
+			Serial.print( " failed, return code: " );
+			Serial.print( mqttClient.state() );
+			Serial.println( " try again in 2 seconds" );
+			// Wait 2 seconds before retrying.
+			delay( 2000 );
+		}
+	}
+	Serial.println( "MQTT is connected!\n" );
+} // End of mqttConnect() function.
+
+
+void setup()
+{
+	Serial.begin( 115200 );
+	delay( 10 );
+	Serial.println( '\n' );
+
+	mqttClient.setServer( mqttBroker, mqttPort ); // Set the MQTT client parameters.
+
+	WiFi.begin( wifiSsid, wifiPassword ); // Connect to the WiFi network.
 	Serial.print( "WiFi connecting to " );
 	Serial.println( wifiSsid );
 
@@ -59,90 +85,68 @@ String networkConnect()
 	// Print that WiFi has connected.
 	Serial.println( '\n' );
 	Serial.println( "WiFi connection established!" );
-	Serial.print( "IP address:\t" );
+	Serial.print( "MAC address: " );
+	Serial.println( WiFi.macAddress() );
+	Serial.print( "IP address: " );
 	Serial.println( WiFi.localIP() );
 
-	// Loop until MQTT has connected.
-	while( !mqttClient.connected() )
-	{
-		Serial.print( "Attempting MQTT connection..." );
-		if( mqttClient.connect( "ESP8266 Client" ) ) // Attempt to networkConnect using the designated clientID.
-		{
-			Serial.println( "connected" );
-		}
-		else
-		{
-			Serial.print( " failed, return code: " );
-			Serial.print( mqttClient.state() );
-			Serial.println( " try again in 2 seconds" );
-			// Wait 2 seconds before retrying.
-			delay( 2000 );
-		}
-	}
-	Serial.println( "WiFi and MQTT are connected!\n" );
-	return WiFi.localIP().toString();
-} // End of networkConnect() function.
-
-
-void setup()
-{
-	Serial.begin( 115200 );
-	delay( 10 );
-	Serial.println( '\n' );
-
-	mqttClient.setServer( mqttBroker, mqttPort ); // Set the MQTT client parameters.
-
-	pinMode( ESP12_LED, OUTPUT );	  // Initialize ESP12_LED as an output.
-	pinMode( ESP8266_LED, OUTPUT ); // Initialize ESP8266_LED as an output.
-
-	WiFi.begin( wifiSsid, wifiPassword ); // Connect to the WiFi network.
-	networkConnect();
-
-	// Store client IP address into clientAddress.
-	sprintf( clientAddress, "IP:%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3] );
-	// Publish the client IP address to the MQTT broker.
-	mqttClient.publish( mqttTopic, clientAddress );
-
-	Serial.println( "Attempting to networkConnect to the BMP280." );
+	// Connect to the MQTT broker.
+	// mqttConnect();
 	if( !bmp280.begin( BMP280_I2C_ADDRESS ) )
 	{
 		Serial.println( "Could not find a valid BMP280 sensor, Check wiring!" );
 		while( 1 )
 			;
 	}
+
+	// Store client IP address into clientAddress.
+	sprintf( clientAddress, "IP:%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3] );
+
+	Serial.println( "Attempting to connect to the BMP280." );
+	if( !bmp280.begin( BMP280_I2C_ADDRESS ) )
+	{
+		Serial.println( "Could not find a valid BMP280 sensor, Check wiring!" );
+		while( 1 )
+			;
+	}
+	Serial.println( "Connected to the BMP280!\n" );
 } // End of setup() function.
 
 
 void loop()
 {
+	Serial.println();
 	// Check the mqttClient connection state.
 	if( !mqttClient.connected() )
 	{
-		// Reconnect to WiFi and/or MQTT.
-		networkConnect();
+		// Reconnect to the MQTT broker.
+		mqttConnect();
 	}
 	mqttClient.loop();
 
-	// Get temperature, pressure and altitude from library.
-	float temperature = bmp280.readTemperature();	// Get temperature.
-	float pressure = bmp280.readPressure();			// Get pressure.
-	float altitude = bmp280.readAltitude( 1016.8 ); // Get altitude (this should be adjusted to your local forecast).
+	// Publish the client IP address to the MQTT broker.
+	mqttClient.publish( mqttTopic, clientAddress );
 
-	char* outLine;
-	snprintf( outLine, 32, "Temperature: %s °C ( %s °F )\n", temperature, ( ( temperature * 9 / 5 ) + 32 ) );
-	mqttClient.publish( mqttTopic, outLine );
-	Serial.print( outLine );
+	// Get temperature, pressure and altitude from the Adafruit BMP280 library.
+	float temperature = bmp280.readTemperature();	 // Get temperature.
+	float pressure = bmp280.readPressure();			 // Get pressure.
+	float altitude_ = bmp280.readAltitude( 1016.8 ); // Get altitude (this should be adjusted to your local forecast).
 
-	snprintf( outLine, 32, "Pressure: %s hPa ( %s inHg )\n", pressure, ( pressure * 0.000295 ) );
-	mqttClient.publish( mqttTopic, outLine );
-	Serial.print( outLine );
+	// Shamelessly stolen from: https://stackoverflow.com/a/62803431/2803488
+	char displayTemperature[64] = "Temperature: ";
+	char displayPressure[64] = "Pressure: ";
+	char displayAltitude[64] = "Altitude: ";
 
-	snprintf( outLine, 32, "Altitude: %s m ( %s feet )\n\n", altitude, ( altitude * 3.281 ) );
-	mqttClient.publish( mqttTopic, outLine );
-	Serial.print( outLine );
+	snprintf( strchr( displayTemperature, '\0' ), sizeof( displayTemperature ), "%.1f °C", temperature );
+	snprintf( strchr( displayPressure, '\0' ), sizeof( displayPressure ), "%.1f hPa", pressure );
+	snprintf( strchr( displayAltitude, '\0' ), sizeof( displayAltitude ), "%.1f m", altitude_ );
 
-	digitalWrite( ESP12_LED, LED_ON );	// Turn the LED on.
-	delay( 5000 );								// Wait for two seconds.
-	digitalWrite( ESP12_LED, LED_OFF ); // Turn the LED off.
-	delay( 5000 );								// Wait for two seconds.
+	Serial.println( displayTemperature );
+	mqttClient.publish( mqttTopic, displayTemperature );
+	Serial.println( displayPressure );
+	mqttClient.publish( mqttTopic, displayPressure );
+	Serial.println( displayAltitude );
+	mqttClient.publish( mqttTopic, displayAltitude );
+
+	delay( 60000 ); // Wait for 60 seconds.
 } // End of loop() function.
