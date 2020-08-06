@@ -100,7 +100,7 @@ void setup()
 	}
 
 	// Store client IP address into clientAddress.
-	sprintf( clientAddress, "IP: %d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3] );
+	sprintf( clientAddress, "%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3] );
 
 	Serial.println( "Attempting to connect to the BMP280." );
 	if( !bmp280.begin( BMP280_I2C_ADDRESS ) )
@@ -124,33 +124,18 @@ void loop()
 	}
 	mqttClient.loop();
 
-	// Publish the client IP address to the MQTT broker.
-	mqttClient.publish( mqttTopic, clientAddress );
-
 	// Get temperature, pressure and altitude from the Adafruit BMP280 library.
 	float temperature = bmp280.readTemperature();	 // Get temperature.
 	float pressure = bmp280.readPressure();			 // Get pressure.
 	float altitude_ = bmp280.readAltitude( 1016.8 ); // Get altitude (this should be adjusted to your local forecast).
 
+	// Format the readings into JSON.
 	char mqttString[256];
-	snprintf( mqttString, 256, "{\"ip\":\"%s\",\"temp\":%.1f,\"pres\":%.1f,\"alt\":%.1f}", clientAddress, temperature, pressure, altitude_ );
+	snprintf( mqttString, 256, "{\n\t\"ip\": \"%s\",\n\t\"temp\": %.1f,\n\t\"pres\": %.1f,\n\t\"alt\": %.1f\n}", clientAddress, temperature, pressure, altitude_ );
+	// Publish the JSON to the MQTT broker.
 	mqttClient.publish( mqttTopic, mqttString );
-
-	// Shamelessly stolen from: https://stackoverflow.com/a/62803431/2803488
-	// char displayTemperature[64] = "Temperature: ";
-	// char displayPressure[64] = "Pressure: ";
-	// char displayAltitude[64] = "Altitude: ";
-
-	// snprintf( strchr( displayTemperature, '\0' ), sizeof( displayTemperature ), "%.1f °C", temperature );
-	// snprintf( strchr( displayPressure, '\0' ), sizeof( displayPressure ), "%.1f hPa", pressure );
-	// snprintf( strchr( displayAltitude, '\0' ), sizeof( displayAltitude ), "%.1f m", altitude_ );
-
-	// Serial.println( displayTemperature );
-	// mqttClient.publish( mqttTopic, displayTemperature );
-	// Serial.println( displayPressure );
-	// mqttClient.publish( mqttTopic, displayPressure );
-	// Serial.println( displayAltitude );
-	// mqttClient.publish( mqttTopic, displayAltitude );
+	// Print the JSON to the Serial port.
+	Serial.println( mqttString );
 
 	delay( 60000 ); // Wait for 60 seconds.
 } // End of loop() function.
