@@ -26,7 +26,9 @@ WiFiClient espClient;
 PubSubClient mqttClient( espClient );
 
 
-// Connect to the MQTT broker.
+/**
+ * mqttConnect() will attempt to (re)connect the MQTT client.
+ */
 void mqttConnect()
 {
 	// Loop until MQTT has connected.
@@ -50,15 +52,24 @@ void mqttConnect()
 } // End of mqttConnect() function.
 
 
+/**
+ * The setup() function runs once when the device is booted, and then loop() takes over.
+ */
 void setup()
 {
+	// Start the Serial communication to send messages to the computer.
 	Serial.begin( 115200 );
 	delay( 10 );
 	Serial.println( '\n' );
+	pinMode( 2, OUTPUT );	  // Initialize digital pin LED_BUILTIN as an output.
+	digitalWrite( 2, LOW ); // Turn the LED on.
 
+	// Set the MQTT client parameters.
 	mqttClient.setServer( mqttBroker, mqttPort ); // Set the MQTT client parameters.
 
-	WiFi.begin( wifiSsid, wifiPassword ); // Connect to the WiFi network.
+	// Connect to the WiFi network.
+	Serial.printf( "Wi-Fi mode set to WIFI_STA %s\n", WiFi.mode( WIFI_STA ) ? "" : "Failed!" );
+	WiFi.begin( wifiSsid, wifiPassword );
 	Serial.print( "WiFi connecting to " );
 	Serial.println( wifiSsid );
 
@@ -88,19 +99,9 @@ void setup()
 	Serial.print( "MAC address: " );
 	Serial.println( WiFi.macAddress() );
 	Serial.print( "IP address: " );
-	Serial.println( WiFi.localIP() );
-
-	// Connect to the MQTT broker.
-	// mqttConnect();
-	if( !bmp280.begin( BMP280_I2C_ADDRESS ) )
-	{
-		Serial.println( "Could not find a valid BMP280 sensor, Check wiring!" );
-		while( 1 )
-			;
-	}
-
 	// Store client IP address into clientAddress.
 	sprintf( clientAddress, "%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3] );
+	Serial.println( clientAddress );
 
 	Serial.println( "Attempting to connect to the BMP280." );
 	if( !bmp280.begin( BMP280_I2C_ADDRESS ) )
@@ -113,6 +114,9 @@ void setup()
 } // End of setup() function.
 
 
+/**
+ * The loop() function begins after setup(), and repeats as long as the unit is powered.
+ */
 void loop()
 {
 	Serial.println();
