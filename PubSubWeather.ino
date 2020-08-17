@@ -15,6 +15,7 @@
 const char* wifiSsid = "Red";
 const char* wifiPassword = "8012254722";
 char clientAddress[16];
+char macAddress[18];
 const char* mqttBroker = "192.168.55.200";
 const char* mqttTopic = "ajhWeather";
 const int mqttPort = 2112;
@@ -61,7 +62,7 @@ void setup()
 	Serial.begin( 115200 );
 	delay( 10 );
 	Serial.println( '\n' );
-	pinMode( 2, OUTPUT );	  // Initialize digital pin LED_BUILTIN as an output.
+	pinMode( 2, OUTPUT );	// Initialize digital pin LED_BUILTIN as an output.
 	digitalWrite( 2, LOW ); // Turn the LED on.
 
 	// Set the MQTT client parameters.
@@ -96,11 +97,11 @@ void setup()
 	// Print that WiFi has connected.
 	Serial.println( '\n' );
 	Serial.println( "WiFi connection established!" );
+	snprintf( macAddress, 18, "%s", WiFi.macAddress().c_str() );
 	Serial.print( "MAC address: " );
-	Serial.println( WiFi.macAddress() );
+	Serial.println( macAddress );
 	Serial.print( "IP address: " );
-	// Store client IP address into clientAddress.
-	sprintf( clientAddress, "%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3] );
+	snprintf( clientAddress, 16, "%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3] );
 	Serial.println( clientAddress );
 
 	Serial.println( "Attempting to connect to the BMP280." );
@@ -135,7 +136,8 @@ void loop()
 
 	// Format the readings into JSON.
 	char mqttString[256];
-	snprintf( mqttString, 256, "{\n\t\"ip\": \"%s\",\n\t\"temp\": %.1f,\n\t\"pres\": %.1f,\n\t\"alt\": %.1f\n}", clientAddress, temperature, pressure, altitude_ );
+	// Publish the readings to the MQTT broker in JSON format.
+	snprintf( mqttString, 256, "{\n\t\"mac\": \"%s\",\n\t\"ip\": \"%s\",\n\t\"temp\": %.1f,\n\t\"pres\": %.1f,\n\t\"alt\": %.1f\n}", macAddress, clientAddress, temperature, pressure, altitude_ );
 	// Publish the JSON to the MQTT broker.
 	mqttClient.publish( mqttTopic, mqttString );
 	// Print the JSON to the Serial port.
