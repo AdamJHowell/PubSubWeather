@@ -8,17 +8,23 @@
 #include <ESP8266WiFi.h>	  // Network Client for the WiFi chipset.
 #include <PubSubClient.h>	  // PubSub is the MQTT API.
 #include <Wire.h>				  // Include Wire library, required for I2C devices
+#include "networkVariables.h"		// I use this file to hide my network information from random people browsing my GitHub repo.
 
-#define BMP280_I2C_ADDRESS 0x76
+#define BMP280_I2C_ADDRESS 0x76	// Confirmed working I2C address as of 2021-08-21, for the GY-BM model https://smile.amazon.com/gp/product/B07S98QBTQ/.
 
-// Define constants.
-const char* wifiSsid = "Red";
-const char* wifiPassword = "8012254722";
+/**
+ * Declare network variables.
+ * Adjust the commented-out variables to match your network and broker settings.
+ * The commented-out variables are stored in "networkVariables.h", which I do not upload to GitHub.
+ */
+//const char* wifiSsid = "yourSSID";
+//const char* wifiPassword = "yourPassword";
+//const char* mqttBroker = "yourBrokerAddress";
+//const int mqttPort = 1883;
+const char* mqttTopic = "ajhWeather";
 char clientAddress[16];
 char macAddress[18];
-const char* mqttBroker = "192.168.55.200";
-const char* mqttTopic = "ajhWeather";
-const int mqttPort = 2112;
+const float seaLevelPressure = 1002.0325051;		// Adjust this to the sea level pressure (in hectopascals) for your local weather conditions.
 
 
 // Create class objects.
@@ -66,13 +72,16 @@ void setup()
 	digitalWrite( 2, LOW ); // Turn the LED on.
 
 	// Set the MQTT client parameters.
-	mqttClient.setServer( mqttBroker, mqttPort ); // Set the MQTT client parameters.
+	mqttClient.setServer( mqttBroker, mqttPort );
+
+	// Announce WiFi parameters.
+	String logString = "WiFi connecting to SSID: ";
+	logString += wifiSsid;
+	Serial.println( logString );
 
 	// Connect to the WiFi network.
 	Serial.printf( "Wi-Fi mode set to WIFI_STA %s\n", WiFi.mode( WIFI_STA ) ? "" : "Failed!" );
 	WiFi.begin( wifiSsid, wifiPassword );
-	Serial.print( "WiFi connecting to " );
-	Serial.println( wifiSsid );
 
 	int i = 0;
 	/*
@@ -130,18 +139,23 @@ void loop()
 	mqttClient.loop();
 
 	// Get temperature, pressure and altitude from the Adafruit BMP280 library.
-	float temperature = bmp280.readTemperature();	 // Get temperature.
-	float pressure = bmp280.readPressure();			 // Get pressure.
-	float altitude_ = bmp280.readAltitude( 1016.8 ); // Get altitude (this should be adjusted to your local forecast).
+	// Temperature is always a floating point in Centigrade units. Pressure is a 32 bit integer in Pascal units.
+	float temperature = bmp280.readTemperature();	 				// Get temperature.
+	float pressure = bmp280.readPressure();			 				// Get pressure.
+	float altitude_ = bmp280.readAltitude( seaLevelPressure );	// Get altitude based on the sea level pressure for your location.
+	float temperatureF = ( temperature * 9 / 5 ) + 32;				// Convert the temperature from centigrade to Fahrenheit.
+	float pressureHg = pressure / 3386;									// Convert the pressure from Pascals to inches of Mercury.
+	float altitudeFt = altitude_ * 3.281;								// Convert the altitude from meters to feet.
 
 	// Format the readings into JSON.
 	char mqttString[256];
 	// Publish the readings to the MQTT broker in JSON format.
-	snprintf( mqttString, 256, "{\n\t\"mac\": \"%s\",\n\t\"ip\": \"%s\",\n\t\"temp\": %.1f,\n\t\"pres\": %.1f,\n\t\"alt\": %.1f\n}", macAddress, clientAddress, temperature, pressure, altitude_ );
+	snprintf( mqttString, 256, "{\n\t\"mac\": \"%s\",\n\t\"ip\": \"%s\",\n\t\"tempC\": %.1f,\n\t\"presP\": %.1f,\n\t\"altM\": %.1f\n}", macAddress, clientAddress, temperature, pressure, altitude_ );
 	// Publish the JSON to the MQTT broker.
 	mqttClient.publish( mqttTopic, mqttString );
 	// Print the JSON to the Serial port.
 	Serial.println( mqttString );
 
+	Serial.println( "Pausing for 60 seconds..." );
 	delay( 60000 ); // Wait for 60 seconds.
 } // End of loop() function.
