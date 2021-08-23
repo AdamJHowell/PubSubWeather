@@ -9,6 +9,7 @@
 #include <PubSubClient.h>	  // PubSub is the MQTT API.  Author: Nick O'Leary
 #include <Wire.h>				  // Include Wire library, required for I2C devices
 #include "networkVariables.h"		// I use this file to hide my network information from random people browsing my GitHub repo.
+#include <ThingSpeak.h>
 
 #define BMP280_I2C_ADDRESS 0x76	// Confirmed working I2C address as of 2021-08-21, for the GY-BM model https://smile.amazon.com/gp/product/B07S98QBTQ/.
 
@@ -24,10 +25,14 @@
 const char* mqttTopic = "ajhWeather";
 char clientAddress[16];
 char macAddress[18];
-const float seaLevelPressure = 1002.0325051;		// Adjust this to the sea level pressure (in hectopascals) for your local weather conditions.
+const float seaLevelPressure = 1009.8;		// Adjust this to the sea level pressure (in hectopascals) for your local weather conditions.
+// Provo Airport: https://forecast.weather.gov/data/obhistory/KPVU.html
 const int led1 = 2;
 const int led2 = 16;
-
+// ThingSpeak variables
+unsigned long myChannelNumber = 1;
+unsigned long lastTime = 0;
+unsigned long timerDelay = 30000;
 
 // Create class objects.
 Adafruit_BMP280 bmp280;
@@ -86,6 +91,7 @@ void setup()
 	// Connect to the WiFi network.
 	Serial.printf( "Wi-Fi mode set to WIFI_STA %s\n", WiFi.mode( WIFI_STA ) ? "" : "Failed!" );
 	WiFi.begin( wifiSsid, wifiPassword );
+	ThingSpeak.begin( espClient );  // Initialize ThingSpeak
 
 	int i = 0;
 	/*
@@ -150,14 +156,28 @@ void loop()
 	float pressure = bmp280.readPressure();			 				// Get pressure.
 	float altitude_ = bmp280.readAltitude( seaLevelPressure );	// Get altitude based on the sea level pressure for your location.
 
-	// Format the readings into JSON.
+	// Prepare a String to hold the JSON.
 	char mqttString[256];
-	// Publish the readings to the MQTT broker in JSON format.
+	// Write the readings to the String in JSON format.
 	snprintf( mqttString, 256, "{\n\t\"mac\": \"%s\",\n\t\"ip\": \"%s\",\n\t\"tempC\": %.1f,\n\t\"presP\": %.1f,\n\t\"altM\": %.1f\n}", macAddress, clientAddress, temperature, pressure, altitude_ );
 	// Publish the JSON to the MQTT broker.
 	mqttClient.publish( mqttTopic, mqttString );
 	// Print the JSON to the Serial port.
 	Serial.println( mqttString );
+
+	// Set the ThingSpeak fields.
+	ThingSpeak.setField(1, temperature);
+	ThingSpeak.setField(2, pressure);
+	ThingSpeak.setField(3, altitude_);
+	int x = ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
+	if(x == 200)
+	{
+   	Serial.println("Thingspeak update successful.");
+   }
+   else
+	{
+   	Serial.println("Problem updating channel. HTTP error code " + String(x));
+   }
 
 	Serial.println( "Pausing for 60 seconds..." );
 	delay( 60000 ); // Wait for 60 seconds.
