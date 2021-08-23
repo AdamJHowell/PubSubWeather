@@ -6,7 +6,7 @@
 #include <Adafruit_BMP280.h> // Include Adafruit library for BMP280 sensor
 #include <Adafruit_Sensor.h> // Include Adafruit sensor library
 #include <ESP8266WiFi.h>	  // Network Client for the WiFi chipset.
-#include <PubSubClient.h>	  // PubSub is the MQTT API.
+#include <PubSubClient.h>	  // PubSub is the MQTT API.  Author: Nick O'Leary
 #include <Wire.h>				  // Include Wire library, required for I2C devices
 #include "networkVariables.h"		// I use this file to hide my network information from random people browsing my GitHub repo.
 
@@ -25,6 +25,8 @@ const char* mqttTopic = "ajhWeather";
 char clientAddress[16];
 char macAddress[18];
 const float seaLevelPressure = 1002.0325051;		// Adjust this to the sea level pressure (in hectopascals) for your local weather conditions.
+const int led1 = 2;
+const int led2 = 16;
 
 
 // Create class objects.
@@ -41,6 +43,7 @@ void mqttConnect()
 	// Loop until MQTT has connected.
 	while( !mqttClient.connected() )
 	{
+    digitalWrite( led2, HIGH ); // Turn the LED off.
 		Serial.print( "Attempting MQTT connection..." );
 		if( mqttClient.connect( "ESP8266 Client" ) ) // Attempt to mqttConnect using the designated clientID.
 		{
@@ -56,6 +59,7 @@ void mqttConnect()
 		}
 	}
 	Serial.println( "MQTT is connected!\n" );
+  digitalWrite( led2, LOW ); // Turn the LED on.
 } // End of mqttConnect() function.
 
 
@@ -68,8 +72,8 @@ void setup()
 	Serial.begin( 115200 );
 	delay( 10 );
 	Serial.println( '\n' );
-	pinMode( 2, OUTPUT );	// Initialize digital pin LED_BUILTIN as an output.
-	digitalWrite( 2, LOW ); // Turn the LED on.
+	pinMode( led1, OUTPUT );	// Initialize digital pin LED_BUILTIN as an output.
+  pinMode( led2, OUTPUT );	// Initialize digital pin LED_BUILTIN as an output.
 
 	// Set the MQTT client parameters.
 	mqttClient.setServer( mqttBroker, mqttPort );
@@ -95,6 +99,7 @@ void setup()
 	// Loop until WiFi has connected.
 	while( WiFi.status() != WL_CONNECTED )
 	{
+    digitalWrite( led1, HIGH ); // Turn the LED off.
 		delay( 1000 );
 		Serial.println( "Waiting for a connection..." );
 		Serial.print( "WiFi status: " );
@@ -112,6 +117,7 @@ void setup()
 	Serial.print( "IP address: " );
 	snprintf( clientAddress, 16, "%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3] );
 	Serial.println( clientAddress );
+	digitalWrite( led1, LOW ); // Turn the LED on.
 
 	Serial.println( "Attempting to connect to the BMP280." );
 	if( !bmp280.begin( BMP280_I2C_ADDRESS ) )
@@ -143,9 +149,6 @@ void loop()
 	float temperature = bmp280.readTemperature();	 				// Get temperature.
 	float pressure = bmp280.readPressure();			 				// Get pressure.
 	float altitude_ = bmp280.readAltitude( seaLevelPressure );	// Get altitude based on the sea level pressure for your location.
-	float temperatureF = ( temperature * 9 / 5 ) + 32;				// Convert the temperature from centigrade to Fahrenheit.
-	float pressureHg = pressure / 3386;									// Convert the pressure from Pascals to inches of Mercury.
-	float altitudeFt = altitude_ * 3.281;								// Convert the altitude from meters to feet.
 
 	// Format the readings into JSON.
 	char mqttString[256];
