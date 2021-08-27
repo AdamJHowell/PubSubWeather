@@ -27,12 +27,11 @@ char clientAddress[16];
 char macAddress[18];
 const float seaLevelPressure = 1009.8;		// Adjust this to the sea level pressure (in hectopascals) for your local weather conditions.
 // Provo Airport: https://forecast.weather.gov/data/obhistory/KPVU.html
-const int led1 = 2;
-const int led2 = 16;
+const int wifiLED = 2;		// This LED is on the ESP8266 module itself (next to the antenna).
+const int mqttLED = 16;		// This LED is on the NodeMCU board, near the microUSB port.
 // ThingSpeak variables
 unsigned long myChannelNumber = 1;
-unsigned long lastTime = 0;
-unsigned long timerDelay = 30000;
+//const char* myWriteAPIKey = "yourWriteKey";
 
 // Create class objects.
 Adafruit_BMP280 bmp280;
@@ -48,11 +47,12 @@ void mqttConnect()
 	// Loop until MQTT has connected.
 	while( !mqttClient.connected() )
 	{
-    digitalWrite( led2, HIGH ); // Turn the LED off.
+		digitalWrite( mqttLED, 1 );						// Turn the MQTT LED off.
 		Serial.print( "Attempting MQTT connection..." );
 		if( mqttClient.connect( "ESP8266 Client" ) ) // Attempt to mqttConnect using the designated clientID.
 		{
-			Serial.println( "connected" );
+			Serial.println( "connected!" );
+			digitalWrite( mqttLED, 0 );					// Turn the MQTT LED on.
 		}
 		else
 		{
@@ -64,7 +64,6 @@ void mqttConnect()
 		}
 	}
 	Serial.println( "MQTT is connected!\n" );
-  digitalWrite( led2, LOW ); // Turn the LED on.
 } // End of mqttConnect() function.
 
 
@@ -77,8 +76,9 @@ void setup()
 	Serial.begin( 115200 );
 	delay( 10 );
 	Serial.println( '\n' );
-	pinMode( led1, OUTPUT );	// Initialize digital pin LED_BUILTIN as an output.
-  pinMode( led2, OUTPUT );	// Initialize digital pin LED_BUILTIN as an output.
+	pinMode( wifiLED, OUTPUT );	// Initialize digital pin WiFi LED as an output.
+	pinMode( mqttLED, OUTPUT );	// Initialize digital pin MQTT LED as an output.
+
 
 	// Set the MQTT client parameters.
 	mqttClient.setServer( mqttBroker, mqttPort );
@@ -105,7 +105,7 @@ void setup()
 	// Loop until WiFi has connected.
 	while( WiFi.status() != WL_CONNECTED )
 	{
-    digitalWrite( led1, HIGH ); // Turn the LED off.
+		digitalWrite( wifiLED, 1 );	// Turn the WiFi LED off.
 		delay( 1000 );
 		Serial.println( "Waiting for a connection..." );
 		Serial.print( "WiFi status: " );
@@ -123,7 +123,7 @@ void setup()
 	Serial.print( "IP address: " );
 	snprintf( clientAddress, 16, "%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3] );
 	Serial.println( clientAddress );
-	digitalWrite( led1, LOW ); // Turn the LED on.
+	digitalWrite( wifiLED, 0 );	// Turn the WiFi LED on.
 
 	Serial.println( "Attempting to connect to the BMP280." );
 	if( !bmp280.begin( BMP280_I2C_ADDRESS ) )
@@ -141,6 +141,11 @@ void setup()
  */
 void loop()
 {
+	// These next 3 lines act as a "heartbeat", to give local users an indication that the system is working.
+	digitalWrite( wifiLED, 1 );	// Turn the WiFi LED off to alert the user that a reading is about to take place.
+	delay( 1000 );						// Wait for one second.
+	digitalWrite( wifiLED, 0 );	// Turn the WiFi LED on.
+
 	Serial.println();
 	// Check the mqttClient connection state.
 	if( !mqttClient.connected() )
@@ -180,5 +185,5 @@ void loop()
    }
 
 	Serial.println( "Pausing for 60 seconds..." );
-	delay( 60000 ); // Wait for 60 seconds.
+	delay( 60000 );	// Wait for 60 seconds.
 } // End of loop() function.
