@@ -3,11 +3,11 @@
  * The BMP280 uses the I2C bus to communicate with the microcontroller.
  * The ESP-12E SCL pin is D1 (GPIO5), and SDA is D2 (GPIO4).
  */
-#include <Adafruit_BMP280.h> // Include Adafruit library for BMP280 sensor
-#include <Adafruit_Sensor.h> // Include Adafruit sensor library
-#include <ESP8266WiFi.h>	  // Network Client for the WiFi chipset.
-#include <PubSubClient.h>	  // PubSub is the MQTT API.  Author: Nick O'Leary
-#include <Wire.h>				  // Include Wire library, required for I2C devices
+#include <Adafruit_BMP280.h> // The Adafruit library for BMP280 sensor.
+#include <Adafruit_Sensor.h> // The Adafruit sensor library.
+#include <ESP8266WiFi.h>	  // This header is added to the IDE libraries after the ESP8266 is added in board manager.
+#include <PubSubClient.h>	  // PubSub is the MQTT API.  Author: Nick O'Leary  https://github.com/knolleary/pubsubclient
+#include <Wire.h>				  // This is part of the standard library.  https://www.arduino.cc/en/reference/wire
 #include "networkVariables.h"		// I use this file to hide my network information from random people browsing my GitHub repo.
 #include <ThingSpeak.h>
 
