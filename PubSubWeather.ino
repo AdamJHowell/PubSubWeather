@@ -1,7 +1,7 @@
 /**
  * This sketch will use a BMP280 sensor to show temperature, pressure, and estimated altitude.
  * The BMP280 uses the I2C bus to communicate with the microcontroller.
- * The ESP-12E SCL pin is D1 (GPIO5), and SDA is D2 (GPIO4).
+ * The ESP8266/ESP-12E SCL pin is D1 (GPIO5), and SDA is D2 (GPIO4).
  */
 #include <Adafruit_BMP280.h>		// The Adafruit library for BMP280 sensor.
 #include <Adafruit_Sensor.h>		// The Adafruit sensor library.
@@ -23,6 +23,7 @@
 //const char* mqttBroker = "yourBrokerAddress";
 //const int mqttPort = 1883;
 const char* mqttTopic = "ajhWeather";
+const String sketchName = "PubSubWeather.ino";
 char clientAddress[16];
 char macAddress[18];
 const float seaLevelPressure = 1009.8;		// Adjust this to the sea level pressure (in hectopascals) for your local weather conditions.
@@ -164,7 +165,7 @@ void loop()
 	// Prepare a String to hold the JSON.
 	char mqttString[256];
 	// Write the readings to the String in JSON format.
-	snprintf( mqttString, 256, "{\n\t\"mac\": \"%s\",\n\t\"ip\": \"%s\",\n\t\"tempC\": %.1f,\n\t\"presP\": %.1f,\n\t\"altM\": %.1f\n}", macAddress, clientAddress, temperature, pressure, altitude_ );
+	snprintf( mqttString, 256, "{\n\t\"sketch\": \"%s\",\n\t\"mac\": \"%s\",\n\t\"ip\": \"%s\",\n\t\"tempC\": %.1f,\n\t\"pressure\": %.1f,\n\t\"altM\": %.1f\n}", sketchName, macAddress, clientAddress, temperature, pressure, altitude_ );
 	// Publish the JSON to the MQTT broker.
 	mqttClient.publish( mqttTopic, mqttString );
 	// Print the JSON to the Serial port.
