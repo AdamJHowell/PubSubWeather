@@ -24,9 +24,10 @@
 //const int mqttPort = 1883;
 const char* mqttTopic = "ajhWeather";
 const char* sketchName = "ESP8266BMP280ThingSpeak";
+const char* notes = "Lolin ESP8266 with cheap BMP280";
 char ipAddress[16];
 char macAddress[18];
-const float seaLevelPressure = 1009.8;		// Adjust this to the sea level pressure (in hectopascals) for your local weather conditions.
+const float seaLevelPressure = 1024.0;		// Adjust this to the sea level pressure (in hectopascals) for your local weather conditions.
 // Provo Airport: https://forecast.weather.gov/data/obhistory/KPVU.html
 const int wifiLED = 2;		// This LED for the Lolin NoceMCU is on the ESP8266 module itself (next to the antenna).
 // ThingSpeak variables
@@ -116,12 +117,12 @@ void setup()
 {
 	// Start the Serial communication to send messages to the computer.
 	Serial.begin( 115200 );
-	delay( 100 );
+	while ( !Serial )
+		delay( 100 );
 	Serial.println( '\n' );
 	Serial.print( sketchName );
 	Serial.println( " is beginning its setup()." );
 	pinMode( wifiLED, OUTPUT );	// Initialize digital pin WiFi LED as an output.
-	pinMode( mqttLED, OUTPUT );	// Initialize digital pin MQTT LED as an output.
 
 	// Set the ipAddress char array to a default value.
 	snprintf( ipAddress, 16, "127.0.0.1" );
@@ -158,7 +159,8 @@ void loop()
 	delay( 1000 );						// Wait for one second.
 	digitalWrite( wifiLED, 0 );	// Turn the WiFi LED on.
 
-	Serial.println();
+	Serial.println( sketchName );
+
 	// Check the mqttClient connection state.
 	if( !mqttClient.connected() )
 	{
@@ -177,7 +179,7 @@ void loop()
 	// Prepare a String to hold the JSON.
 	char mqttString[256];
 	// Write the readings to the String in JSON format.
-	snprintf( mqttString, 256, "{\n\t\"sketch\": \"%s\",\n\t\"mac\": \"%s\",\n\t\"ip\": \"%s\",\n\t\"tempC\": %.1f,\n\t\"pressure\": %.1f,\n\t\"altitude\": %.1f\n}", sketchName, macAddress, ipAddress, temperature, pressure, altitude_ );
+	snprintf( mqttString, 256, "{\n\t\"sketch\": \"%s\",\n\t\"mac\": \"%s\",\n\t\"ip\": \"%s\",\n\t\"tempC\": %.2f,\n\t\"pressure\": %.1f,\n\t\"altitude\": %.1f,\n\t\"notes\": \"%s\"\n}", sketchName, macAddress, ipAddress, temperature, pressure, altitude_, notes );
 	// Publish the JSON to the MQTT broker.
 	mqttClient.publish( mqttTopic, mqttString );
 	// Print the JSON to the Serial port.
