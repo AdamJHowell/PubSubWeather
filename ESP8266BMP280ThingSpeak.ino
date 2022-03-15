@@ -27,12 +27,12 @@ const char* mqttTopic = "espWeather";
 const char* sketchName = "ESP8266BMP280ThingSpeak";
 const char* notes = "Lolin ESP8266 with BMP280";
 const int wifiLED = 2;											// This LED for the Lolin devkit is on the ESP8266 module itself (next to the antenna).
-const char* espControlTopic = "espControl";				// This is a topic we subscribe to, to get updates.  Updates may change publishDelay or request an immediate poll of the sensors.
+const char* espControlTopic = "espControl";				// This is a topic we subscribe to, to get updates.  Updates may change publishDelay, seaLevelPressure, or request an immediate poll of the sensors.
 
 char ipAddress[16];
 char macAddress[18];
 unsigned int loopCount = 0;									// This is a counter for how many loops have happened since power-on (or overflow).
-unsigned long publishDelay = 60000;								// This is the loop delay in miliseconds.
+unsigned long publishDelay = 60000;							// This is the loop delay in miliseconds.
 unsigned long lastPublish = 0;
 float seaLevelPressure = 1014.5;								// Adjust this to the sea level pressure (in hectopascals) for your local weather conditions.
 // Provo Airport: https://forecast.weather.gov/data/obhistory/KPVU.html
@@ -191,14 +191,6 @@ void loop()
 	// When time is less than publishDelay, subtracting publishDelay from time causes an overlow which results in a very large number.
 	if( ( time > publishDelay ) && ( time - publishDelay ) > lastPublish )
 	{
-		Serial.print( "time: " );
-		Serial.println( time );
-		Serial.print( "publishDelay: " );
-		Serial.println( publishDelay );
-		Serial.print( "lastPublish: " );
-		Serial.println( lastPublish );
-		Serial.print( "time - publishDelay: " );
-		Serial.println( time - publishDelay );
 		loopCount++;
 		// These next 3 lines act as a "heartbeat", to give local users a visual indication that the system is working.
 		digitalWrite( wifiLED, 1 );	// Turn the WiFi LED off to alert the user that a reading is about to take place.
