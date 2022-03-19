@@ -5,13 +5,15 @@
  * @copyright   Copyright © 2022 Adam Howell
  * @licence     The MIT License (MIT)
  */
-#include "ESP8266WiFi.h"						// This header is part of the standard library.  https://www.arduino.cc/en/Reference/WiFi
+#include <ESP8266WiFi.h>						// This header is part of the standard library.  https://www.arduino.cc/en/Reference/WiFi
 #include <Wire.h>						// This header is part of the standard library.  https://www.arduino.cc/en/reference/wire
 #include <PubSubClient.h>			// PubSub is the MQTT API.  Author: Nick O'Leary  https://github.com/knolleary/pubsubclient
 #include <Adafruit_BMP280.h>		// The Adafruit library for BMP280 sensor.
 #include <Adafruit_Sensor.h>		// The Adafruit sensor library.
 #include "privateInfo.h"			// I use this file to hide my network information from random people browsing my GitHub repo.
-#include <ThingSpeak.h>
+#include <ThingSpeak.h>				// https://github.com/mathworks/thingspeak-arduino
+//#include <Arduino_JSON.h>			// https://github.com/arduino-libraries/Arduino_JSON
+#include <ArduinoJson.h>			// https://arduinojson.org/
 
 #define BMP280_I2C_ADDRESS 0x76	// Confirmed working I2C address as of 2021-08-21, for the GY-BM model https://smile.amazon.com/gp/product/B07S98QBTQ/.
 
@@ -35,6 +37,7 @@ unsigned int loopCount = 0;									// This is a counter for how many loops have
 unsigned long publishDelay = 60000;							// This is the loop delay in miliseconds.
 unsigned long lastPublish = 0;
 float seaLevelPressure = 1014.5;								// Adjust this to the sea level pressure (in hectopascals) for your local weather conditions.
+float bmp280TPA[3];
 // Provo Airport: https://forecast.weather.gov/data/obhistory/KPVU.html
 // ThingSpeak variables
 unsigned long myChannelNumber = 1;
@@ -48,21 +51,40 @@ PubSubClient mqttClient( espClient );
 
 void onReceiveCallback( char* topic, byte* payload, unsigned int length )
 {
+	char str[length + 1];
 	Serial.print( "Message arrived [" );
 	Serial.print( topic );
 	Serial.print( "] " );
-	for( int i = 0; i < length; i++ )
+	int i=0;
+	for( i = 0; i < length; i++ ) 
 	{
-		char receivedChar = ( char )payload[i];
-		Serial.print( receivedChar );
-		// Note that some boards (like this one) consider 'HIGH' to be off.
-		if( receivedChar == '0' )
-			digitalWrite( LED_BUILTIN, HIGH );		// Turn the LED off.
-		if( receivedChar == '1' )
-			digitalWrite( LED_BUILTIN, LOW );		// Turn the LED on.
+		Serial.print( ( char ) payload[i] );
+		str[i] = ( char )payload[i];
 	}
-	Serial.println();
-}
+	str[i] = 0; // Null termination
+	StaticJsonDocument <256> doc;
+	deserializeJson( doc, str );
+
+	const char* command = doc["command"]; // "publishNow"
+	if( strcmp( command, "publishNow") == 0 )
+	{
+		Serial.println( "Reading and publishing sensor values." );
+		// Poll the sensor and immediately publish the readings.
+		readBMP();
+		// Publish the sensor readings.
+		publishBMP();
+		Serial.println( "Readings have been published." );
+	}
+	else if( strcmp( command, "changeSLP") == 0 )
+	{
+		Serial.println( "Changing the sea-level pressure." );
+		seaLevelPressure = 1015.0;
+		Serial.println( "Variable has been updated." );
+	}
+
+	else
+		Serial.println( "Command was not \"publishNow\"." );
+} // End of onReceiveCallback() function.
 
 
 void wifiConnect( int maxAttempts )
@@ -132,6 +154,7 @@ void mqttConnect( int maxAttempts )
 		}
 		i++;
 	}
+	mqttClient.setBufferSize( 512 );
 } // End of mqttConnect() function.
 
 
@@ -139,8 +162,8 @@ void setup()
 {
 	// Start the Serial communication to send messages to the computer.
 	Serial.begin( 115200 );
-	while ( !Serial )
-		delay( 100 );
+	if( !Serial )
+		delay( 1000 );
 	Serial.println( '\n' );
 	Serial.print( sketchName );
 	Serial.println( " is beginning its setup()." );
@@ -175,6 +198,43 @@ void setup()
 } // End of setup() function.
 
 
+void readBMP()
+{
+	// Get temperature, pressure and altitude from the Adafruit BMP280 library.
+	// Temperature is always a floating point in Centigrade units. Pressure is a 32 bit integer in Pascal units.
+	bmp280TPA[0] = bmp280.readTemperature();	 				// Get temperature.
+	bmp280TPA[1] = bmp280.readPressure();			 				// Get pressure.
+	bmp280TPA[2] = bmp280.readAltitude( seaLevelPressure );	// Get altitude based on the sea level pressure for your location. Note that "altitude" is a keyword, hence the underscore.
+}
+
+
+void publishBMP()
+{
+	// Prepare a String to hold the JSON.
+	char mqttString[512];
+	// Write the readings to the String in JSON format.
+	snprintf( mqttString, 512, "{\n\t\"sketch\": \"%s\",\n\t\"mac\": \"%s\",\n\t\"ip\": \"%s\",\n\t\"tempC\": %.2f,\n\t\"pressure\": %.1f,\n\t\"altitude\": %.1f,\n\t\"uptime\": %d,\n\t\"notes\": \"%s\"\n}", sketchName, macAddress, ipAddress, bmp280TPA[0], bmp280TPA[1], bmp280TPA[2], loopCount, notes );
+	// Publish the JSON to the MQTT broker.
+	mqttClient.publish( mqttTopic, mqttString );
+	// Print the JSON to the Serial port.
+	Serial.println( mqttString );
+}
+
+
+void publishThingSpeak()
+{
+	// Set the ThingSpeak fields.
+	ThingSpeak.setField( 1, bmp280TPA[0] );
+	ThingSpeak.setField( 2, bmp280TPA[1] );
+	ThingSpeak.setField( 3, bmp280TPA[2] );
+	int x = ThingSpeak.writeFields( myChannelNumber, ThingSpeakWriteKey );
+	if( x == 200 )
+		Serial.println( "Thingspeak update successful." );
+	else
+		Serial.println( "Problem updating channel. HTTP error code " + String( x ) );
+}
+
+
 void loop()
 {
 	// Check the mqttClient connection state.
@@ -207,34 +267,10 @@ void loop()
 		Serial.print( espControlTopic );
 		Serial.println( "\"." );
 
-		// Get temperature, pressure and altitude from the Adafruit BMP280 library.
-		// Temperature is always a floating point in Centigrade units. Pressure is a 32 bit integer in Pascal units.
-		float temperature = bmp280.readTemperature();	 				// Get temperature.
-		float pressure = bmp280.readPressure();			 				// Get pressure.
-		float altitude_ = bmp280.readAltitude( seaLevelPressure );	// Get altitude based on the sea level pressure for your location. Note that "altitude" is a keyword, hence the underscore.
+		readBMP();
+		publishBMP();
+		publishThingSpeak();
 
-		// Prepare a String to hold the JSON.
-		char mqttString[256];
-		// Write the readings to the String in JSON format.
-		snprintf( mqttString, 256, "{\n\t\"sketch\": \"%s\",\n\t\"mac\": \"%s\",\n\t\"ip\": \"%s\",\n\t\"tempC\": %.2f,\n\t\"pressure\": %.1f,\n\t\"altitude\": %.1f,\n\t\"uptime\": %d,\n\t\"notes\": \"%s\"\n}", sketchName, macAddress, ipAddress, temperature, pressure, altitude_, loopCount, notes );
-		// Publish the JSON to the MQTT broker.
-		mqttClient.publish( mqttTopic, mqttString );
-		// Print the JSON to the Serial port.
-		Serial.println( mqttString );
-
-		// Set the ThingSpeak fields.
-		ThingSpeak.setField( 1, temperature );
-		ThingSpeak.setField( 2, pressure );
-		ThingSpeak.setField( 3, altitude_ );
-		int x = ThingSpeak.writeFields( myChannelNumber, ThingSpeakWriteKey );
-		if( x == 200 )
-		{
-	   	Serial.println( "Thingspeak update successful." );
-	   }
-	   else
-		{
-	   	Serial.println( "Problem updating channel. HTTP error code " + String( x ) );
-	   }
 	   lastPublish = millis();
 	  	Serial.print( "Next publish in " );
 		Serial.print( publishDelay / 1000 );
