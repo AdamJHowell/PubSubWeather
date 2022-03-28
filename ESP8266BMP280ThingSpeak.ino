@@ -37,7 +37,7 @@ unsigned int loopCount = 0;									// This is a counter for how many loops have
 unsigned long publishDelay = 60000;							// This is the loop delay in miliseconds.
 unsigned long lastPublish = 0;
 float seaLevelPressure = 1014.5;								// Adjust this to the sea level pressure (in hectopascals) for your local weather conditions.
-float bmp280TPA[3];
+float bmp280TPA[3];												// This holds the temperature, pressure, and altitude.
 // Provo Airport: https://forecast.weather.gov/data/obhistory/KPVU.html
 // ThingSpeak variables
 unsigned long myChannelNumber = 1;
@@ -61,12 +61,14 @@ void onReceiveCallback( char* topic, byte* payload, unsigned int length )
 		Serial.print( ( char ) payload[i] );
 		str[i] = ( char )payload[i];
 	}
+	Serial.println();
 	str[i] = 0; // Null termination
 	StaticJsonDocument <256> doc;
 	deserializeJson( doc, str );
 
-	const char* command = doc["command"]; // "publishNow"
-	if( strcmp( command, "publishNow") == 0 )
+	// The command can be: publishTelemetry, changeTelemetryInterval, changeSeaLevelPressure, or publishStatus.
+	const char* command = doc["command"];
+	if( strcmp( command, "publishTelemetry") == 0 )
 	{
 		Serial.println( "Reading and publishing sensor values." );
 		// Poll the sensor and immediately publish the readings.
@@ -75,15 +77,33 @@ void onReceiveCallback( char* topic, byte* payload, unsigned int length )
 		publishBMP();
 		Serial.println( "Readings have been published." );
 	}
-	else if( strcmp( command, "changeSLP") == 0 )
+	else if( strcmp( command, "changeTelemetryInterval") == 0 )
+	{
+		Serial.println( "Changing the publish interval." );
+		unsigned long tempValue = doc["value"];
+		// Only update the value if it is greater than 4 seconds.  This prevents a seconds vs. milliseconds mixup.
+		if( tempValue > 4000 )
+			publishDelay = tempValue;
+		Serial.print( "MQTT publish interval has been updated to " );
+		Serial.println( publishDelay );
+		lastPublish = 0;
+	}
+	else if( strcmp( command, "changeSeaLevelPressure") == 0 )
 	{
 		Serial.println( "Changing the sea-level pressure." );
-		seaLevelPressure = 1015.0;
-		Serial.println( "Variable has been updated." );
+		seaLevelPressure = doc["value"];
+		Serial.print( "Sea-level pressure has been updated to " );
+		Serial.println( seaLevelPressure );
 	}
-
+	else if( strcmp( command, "publishStatus") == 0 )
+	{
+		Serial.println( "publishStatus is not yet implemented." );
+	}
 	else
-		Serial.println( "Command was not \"publishNow\"." );
+	{
+		Serial.print( "Unknown command: " );
+		Serial.println( command );
+	}
 } // End of onReceiveCallback() function.
 
 
@@ -160,6 +180,7 @@ void mqttConnect( int maxAttempts )
 
 void setup()
 {
+	delay( 500 );
 	// Start the Serial communication to send messages to the computer.
 	Serial.begin( 115200 );
 	if( !Serial )
@@ -210,14 +231,23 @@ void readBMP()
 
 void publishBMP()
 {
+	// Print the signal strength:
+	long rssi = WiFi.RSSI();
+	Serial.print( "WiFi RSSI: " );
+	Serial.println( rssi );
 	// Prepare a String to hold the JSON.
 	char mqttString[512];
 	// Write the readings to the String in JSON format.
-	snprintf( mqttString, 512, "{\n\t\"sketch\": \"%s\",\n\t\"mac\": \"%s\",\n\t\"ip\": \"%s\",\n\t\"tempC\": %.2f,\n\t\"pressure\": %.1f,\n\t\"altitude\": %.1f,\n\t\"uptime\": %d,\n\t\"notes\": \"%s\"\n}", sketchName, macAddress, ipAddress, bmp280TPA[0], bmp280TPA[1], bmp280TPA[2], loopCount, notes );
+	snprintf( mqttString, 512, "{\n\t\"sketch\": \"%s\",\n\t\"mac\": \"%s\",\n\t\"ip\": \"%s\",\n\t\"tempC\": %.2f,\n\t\"pressure\": %.1f,\n\t\"altitude\": %.1f,\n\t\"seaLevelPressure\": %.1f,\n\t\"rssi\": %ld,\n\t\"uptime\": %d,\n\t\"notes\": \"%s\"\n}", sketchName, macAddress, ipAddress, bmp280TPA[0], bmp280TPA[1], bmp280TPA[2], seaLevelPressure, rssi, loopCount, notes );
 	// Publish the JSON to the MQTT broker.
-	mqttClient.publish( mqttTopic, mqttString );
+	bool success = mqttClient.publish( mqttTopic, mqttString, false );
+	if( success )
+		Serial.println( "Successfully published this to the broker:" );
+	else
+		Serial.println( "MQTT publish failed!  Attempted to publish this to the broker:" );
 	// Print the JSON to the Serial port.
 	Serial.println( mqttString );
+	lastPublish = millis();
 }
 
 
@@ -271,7 +301,6 @@ void loop()
 		publishBMP();
 		publishThingSpeak();
 
-	   lastPublish = millis();
 	  	Serial.print( "Next publish in " );
 		Serial.print( publishDelay / 1000 );
 		Serial.println( " seconds.\n" );
