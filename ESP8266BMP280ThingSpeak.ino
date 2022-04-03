@@ -35,7 +35,7 @@ char ipAddress[16];
 char macAddress[18];
 unsigned int loopCount = 0;									// This is a counter for how many loops have happened since power-on (or overflow).
 unsigned long publishDelay = 60000;							// This is the loop delay in miliseconds.
-unsigned long lastPublish = 0;
+unsigned long lastPublish = 0;								// This is used to determine the time since last MQTT publish.
 float seaLevelPressure = 1014.5;								// Adjust this to the sea level pressure (in hectopascals) for your local weather conditions.
 float bmp280TPA[3];												// This holds the temperature, pressure, and altitude.
 // Provo Airport: https://forecast.weather.gov/data/obhistory/KPVU.html
@@ -56,7 +56,7 @@ void onReceiveCallback( char* topic, byte* payload, unsigned int length )
 	Serial.print( topic );
 	Serial.print( "] " );
 	int i=0;
-	for( i = 0; i < length; i++ ) 
+	for( i = 0; i < length; i++ )
 	{
 		Serial.print( ( char ) payload[i] );
 		str[i] = ( char )payload[i];
@@ -72,9 +72,9 @@ void onReceiveCallback( char* topic, byte* payload, unsigned int length )
 	{
 		Serial.println( "Reading and publishing sensor values." );
 		// Poll the sensor and immediately publish the readings.
-		readBMP();
+		readTelemetry();
 		// Publish the sensor readings.
-		publishBMP();
+		readTelemetry();
 		Serial.println( "Readings have been published." );
 	}
 	else if( strcmp( command, "changeTelemetryInterval") == 0 )
@@ -138,6 +138,9 @@ void wifiConnect( int maxAttempts )
 		Serial.println( " seconds" );
 	}
 
+	WiFi.setAutoReconnect( true );
+	WiFi.persistent( true );
+
 	// Print that WiFi has connected.
 	Serial.println( '\n' );
 	Serial.println( "WiFi connection established!" );
@@ -168,7 +171,7 @@ void mqttConnect( int maxAttempts )
 		{
 			Serial.print( " failed, return code: " );
 			Serial.print( mqttClient.state() );
-			Serial.println( " try again in 2 seconds" );
+			Serial.println( " try again in 5 seconds" );
 			// Wait 5 seconds before retrying.
 			delay( 5000 );
 		}
@@ -219,7 +222,7 @@ void setup()
 } // End of setup() function.
 
 
-void readBMP()
+void readTelemetry()
 {
 	// Get temperature, pressure and altitude from the Adafruit BMP280 library.
 	// Temperature is always a floating point in Centigrade units. Pressure is a 32 bit integer in Pascal units.
@@ -229,7 +232,7 @@ void readBMP()
 }
 
 
-void publishBMP()
+void publishTelemetry()
 {
 	// Print the signal strength:
 	long rssi = WiFi.RSSI();
@@ -267,16 +270,15 @@ void publishThingSpeak()
 
 void loop()
 {
+	// Reconnect to WiFi if necessary.
+	if( WiFi.status() != WL_CONNECTED )
+		wifiConnect( 10 );
 	// Check the mqttClient connection state.
 	if( !mqttClient.connected() )
-	{
-		// Reconnect to the MQTT broker.
 		mqttConnect( 10 );
-	}
 	// The loop() function facilitates the receiving of messages and maintains the connection to the broker.
 	mqttClient.loop();
 
-	// ToDo: Move all this into a function, and call it from setup() and from loop().
 	unsigned long time = millis();
 	// When time is less than publishDelay, subtracting publishDelay from time causes an overlow which results in a very large number.
 	if( ( time > publishDelay ) && ( time - publishDelay ) > lastPublish )
@@ -297,8 +299,8 @@ void loop()
 		Serial.print( espControlTopic );
 		Serial.println( "\"." );
 
-		readBMP();
-		publishBMP();
+		readTelemetry();
+		publishTelemetry();
 		publishThingSpeak();
 
 	  	Serial.print( "Next publish in " );
