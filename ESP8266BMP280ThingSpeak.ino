@@ -28,16 +28,18 @@
 const char* mqttTopic = "espWeather";
 const char* sketchName = "ESP8266BMP280ThingSpeak";
 const char* notes = "Lolin ESP8266 with BMP280";
-const int wifiLED = 2;											// This LED for the Lolin devkit is on the ESP8266 module itself (next to the antenna).
+const int LED_PIN = 2;											// This LED for the Lolin devkit is on the ESP8266 module itself (next to the antenna).
 const char* espControlTopic = "espControl";				// This is a topic we subscribe to, to get updates.  Updates may change publishDelay, seaLevelPressure, or request an immediate poll of the sensors.
 
 char ipAddress[16];
 char macAddress[18];
 unsigned int loopCount = 0;									// This is a counter for how many loops have happened since power-on (or overflow).
 unsigned long publishDelay = 60000;							// This is the loop delay in miliseconds.
+int mqttReconnectDelay = 5000;								// How long to wait (in milliseconds) between MQTT connection attempts.
 unsigned long lastPublish = 0;								// This is used to determine the time since last MQTT publish.
 float seaLevelPressure = 1014.5;								// Adjust this to the sea level pressure (in hectopascals) for your local weather conditions.
 float bmp280TPA[3];												// This holds the temperature, pressure, and altitude.
+unsigned long bootTime;
 // Provo Airport: https://forecast.weather.gov/data/obhistory/KPVU.html
 // ThingSpeak variables
 unsigned long myChannelNumber = 1;
@@ -130,6 +132,7 @@ void wifiConnect( int maxAttempts )
 	// Loop until WiFi has connected.
 	while( WiFi.status() != WL_CONNECTED && i < maxAttempts )
 	{
+		digitalWrite( LED_PIN, LOW ); // Turn the LED off.
 		delay( 1000 );
 		Serial.println( "Waiting for a connection..." );
 		Serial.print( "WiFi status: " );
@@ -150,39 +153,58 @@ void wifiConnect( int maxAttempts )
 	snprintf( ipAddress, 16, "%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3] );
 	Serial.println( ipAddress );
 
-	digitalWrite( wifiLED, 0 );	// Turn the WiFi LED on.
+	digitalWrite( LED_PIN, 0 );	// Turn the WiFi LED on.
 } // End of wifiConnect() function.
 
 
+// mqttConnect() will attempt to (re)connect the MQTT client.
 void mqttConnect( int maxAttempts )
 {
+	digitalWrite( LED_PIN, LOW ); // Turn the LED off.
+	Serial.print( "Attempting to connect to the MQTT broker up to " );
+	Serial.print( maxAttempts );
+	Serial.println( " times." );
+
 	int i = 0;
 	// Loop until MQTT has connected.
 	while( !mqttClient.connected() && i < maxAttempts )
 	{
-		Serial.print( "Attempting MQTT connection..." );
+		Serial.print( "Attempt # " );
+		Serial.print( i + 1 );
+		Serial.print( "..." );
 		// Connect to the broker using the MAC address for a clientID.  This guarantees that the clientID is unique.
 		if( mqttClient.connect( macAddress ) )
 		{
-			Serial.println( "connected!" );
-			mqttClient.subscribe( espControlTopic );		// Subscribe to the designated MQTT topic.
+			Serial.println( " connected!" );
+			digitalWrite( LED_PIN, HIGH ); // Turn the LED on.
 		}
 		else
 		{
-			Serial.print( " failed, return code: " );
+			Serial.print( " failed!  Return code: " );
 			Serial.print( mqttClient.state() );
-			Serial.println( " try again in 5 seconds" );
-			// Wait 5 seconds before retrying.
-			delay( 5000 );
+			Serial.print( ".  Trying again in " );
+			Serial.print( mqttReconnectDelay / 1000 );
+			Serial.println( " seconds." );
+			digitalWrite( LED_PIN, HIGH ); // Turn the LED on.
+			delay( mqttReconnectDelay / 2 );
+			digitalWrite( LED_PIN, LOW ); // Turn the LED off.
+			delay( mqttReconnectDelay / 2 );
 		}
 		i++;
 	}
 	mqttClient.setBufferSize( 512 );
+	char mqttString[512];
+	snprintf( mqttString, 512, "{\n\t\"sketch\": \"%s\",\n\t\"mac\": \"%s\",\n\t\"ip\": \"%s\"\n}", sketchName, macAddress, ipAddress );
+	mqttClient.publish( "espConnect", mqttString );
+
+	Serial.println( "Function mqttConnect() has completed." );
 } // End of mqttConnect() function.
 
 
 void setup()
 {
+	pinMode( LED_PIN, OUTPUT );			// Initialize digital pin WiFi LED as an output.
+	digitalWrite( LED_PIN, HIGH );	  // Turn the LED on.
 	delay( 500 );
 	// Start the Serial communication to send messages to the computer.
 	Serial.begin( 115200 );
@@ -192,7 +214,6 @@ void setup()
 	Serial.print( sketchName );
 	Serial.println( " is beginning its setup()." );
 	Serial.println( __FILE__ );
-	pinMode( wifiLED, OUTPUT );	// Initialize digital pin WiFi LED as an output.
 
 	// Set the ipAddress char array to a default value.
 	snprintf( ipAddress, 16, "127.0.0.1" );
@@ -217,9 +238,33 @@ void setup()
 
 	wifiConnect( 20 );
 	ThingSpeak.begin( espClient );  // Initialize ThingSpeak
-	// This ensures we take a reading in the first loop().
-	lastPublish = 0;
+
+	printUptime();
 } // End of setup() function.
+
+
+void printUptime()
+{
+	Serial.print( "Uptime in " );
+	long seconds = ( millis() - bootTime ) / 1000;
+	long minutes = seconds / 60;
+	long hours = minutes / 60;
+	if( seconds < 601 )
+	{
+		Serial.print( "seconds: " );
+		Serial.println( seconds );
+	}
+	else if( minutes < 121 )
+	{
+		Serial.print( "minutes: " );
+		Serial.println( minutes );
+	}
+	else
+	{
+		Serial.print( "hours: " );
+		Serial.println( hours );
+	}
+}
 
 
 void readTelemetry()
@@ -241,7 +286,7 @@ void publishTelemetry()
 	// Prepare a String to hold the JSON.
 	char mqttString[512];
 	// Write the readings to the String in JSON format.
-	snprintf( mqttString, 512, "{\n\t\"sketch\": \"%s\",\n\t\"mac\": \"%s\",\n\t\"ip\": \"%s\",\n\t\"tempC\": %.2f,\n\t\"pressure\": %.1f,\n\t\"altitude\": %.1f,\n\t\"seaLevelPressure\": %.1f,\n\t\"rssi\": %ld,\n\t\"uptime\": %d,\n\t\"notes\": \"%s\"\n}", sketchName, macAddress, ipAddress, bmp280TPA[0], bmp280TPA[1], bmp280TPA[2], seaLevelPressure, rssi, loopCount, notes );
+	snprintf( mqttString, 512, "{\n\t\"sketch\": \"%s\",\n\t\"mac\": \"%s\",\n\t\"ip\": \"%s\",\n\t\"tempC\": %.2f,\n\t\"pressure\": %.1f,\n\t\"altitude\": %.1f,\n\t\"seaLevelPressure\": %.1f,\n\t\"rssi\": %ld,\n\t\"loopCount\": %d,\n\t\"notes\": \"%s\"\n}", sketchName, macAddress, ipAddress, bmp280TPA[0], bmp280TPA[1], bmp280TPA[2], seaLevelPressure, rssi, loopCount, notes );
 	// Publish the JSON to the MQTT broker.
 	bool success = mqttClient.publish( mqttTopic, mqttString, false );
 	if( success )
@@ -281,13 +326,13 @@ void loop()
 
 	unsigned long time = millis();
 	// When time is less than publishDelay, subtracting publishDelay from time causes an overlow which results in a very large number.
-	if( ( time > publishDelay ) && ( time - publishDelay ) > lastPublish )
+	if( lastPublish == 0 || ( ( time > publishDelay ) && ( time - publishDelay ) > lastPublish ) )
 	{
 		loopCount++;
 		// These next 3 lines act as a "heartbeat", to give local users a visual indication that the system is working.
-		digitalWrite( wifiLED, 1 );	// Turn the WiFi LED off to alert the user that a reading is about to take place.
+		digitalWrite( LED_PIN, 1 );	// Turn the WiFi LED off to alert the user that a reading is about to take place.
 		delay( 1000 );						// Wait for one second.
-		digitalWrite( wifiLED, 0 );	// Turn the WiFi LED on.
+		digitalWrite( LED_PIN, 0 );	// Turn the WiFi LED on.
 
 		Serial.println( sketchName );
 		Serial.print( "Connected to broker at \"" );
@@ -298,6 +343,7 @@ void loop()
 		Serial.print( "Listening for control messages on topic \"" );
 		Serial.print( espControlTopic );
 		Serial.println( "\"." );
+		printUptime();
 
 		readTelemetry();
 		publishTelemetry();
